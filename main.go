@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"io"
 	"log"
 	"net/http"
 
@@ -37,7 +38,11 @@ func GetResourceHandler(w http.ResponseWriter, r *http.Request) {
 
 func AuthHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("AuthHandler called")
-	log.Printf("body: %q\n", r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("body: %s\n", string(body))
 
 	challenge := Challenge{
 		Nonce: "5555",
@@ -52,7 +57,11 @@ func AuthHandler(w http.ResponseWriter, r *http.Request) {
 func AttestHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("AttestHandler called")
 	log.Printf("cookie: %q\n", r.Header.Get("Cookie"))
-	log.Printf("body: %q\n", r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("body: %s\n", string(body))
 
 	w.Header().Set("Content-Type", "application/json")
 }
@@ -60,7 +69,11 @@ func AttestHandler(w http.ResponseWriter, r *http.Request) {
 func AttestationPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("PolicyHandler called")
 	log.Printf("cookie: %q\n", r.Header.Get("Cookie"))
-	log.Printf("body: %q\n", r.Body)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		panic(err)
+	}
+	log.Printf("body: %s\n", string(body))
 
 	w.Header().Set("Content-Type", "application/json")
 }
