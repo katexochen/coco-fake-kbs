@@ -86,14 +86,14 @@ func TokenCertificateCainHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type Request struct {
-	Version string `json:"version"`
-	TEE     string `json:"tee"`
-	// ExtraParams ? `json:"extra-parama"`
+	Version     string `json:"version"`
+	TEE         string `json:"tee"`
+	ExtraParams string `json:"extra-params"`
 }
 
 type Challenge struct {
-	Nonce string `json:"nonce"`
-	// ExtraParams ? `json:"extra-params"`
+	Nonce       string `json:"nonce"`
+	ExtraParams string `json:"extra-params"`
 }
 
 type Attestation struct {
