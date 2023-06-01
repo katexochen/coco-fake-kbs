@@ -186,8 +186,8 @@ type Challenge struct {
 }
 
 type Attestation struct {
-	TEEPubKey   string `json:"tee-pubkey"`
-	TEEEvidence string `json:"tee-evidence"`
+	TEEPubKey   jose.JSONWebKey `json:"tee-pubkey"`
+	TEEEvidence string          `json:"tee-evidence"`
 }
 
 type Response struct { // jwt...
