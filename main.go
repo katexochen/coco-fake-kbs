@@ -1,17 +1,43 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"flag"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 )
 
+var privateKey *rsa.PrivateKey
+
 func main() {
 	listen := flag.String("listen", ":8080", "listen address")
+	flag.Parse()
+
+	var err error
+	privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(err)
+	}
+
+	// print the public key
+	pemdata := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "RSA PUBLIC KEY",
+			Bytes: x509.MarshalPKCS1PublicKey(&privateKey.PublicKey),
+		},
+	)
+	log.Println("server's public key:")
+	fmt.Println(string(pemdata))
 
 	r := mux.NewRouter()
 	r.HandleFunc("/kbs/v0/resource/{repository}/{type}/{tag}", GetResourceHandler)
@@ -20,6 +46,7 @@ func main() {
 	r.HandleFunc("/kbs/v0/attestation-policy", AttestationPolicyHandler)
 	r.HandleFunc("/kbs/v0/token-certificate-chain", TokenCertificateCainHandler)
 
+	log.Printf("listening on %s\n", *listen)
 	log.Fatal(http.ListenAndServe(*listen, r))
 }
 
@@ -63,7 +90,28 @@ func AttestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("body: %s\n", string(body))
 
-	w.Header().Set("Content-Type", "application/json")
+	token := jwt.NewWithClaims(
+		jwt.SigningMethodRS256,
+		jwt.MapClaims{
+			"exp":        time.Now().Add(time.Hour * 72).Unix(),
+			"iat":        time.Now().Unix(),
+			"iss":        "coco-fake-kbs",
+			"tee-pubkey": "foo",
+		},
+	)
+
+	// Sign and get the complete encoded token as a string using the secret
+	tokenString, err := token.SignedString(privateKey)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Println("answering with token:")
+	fmt.Println(tokenString)
+
+	if _, err := w.Write([]byte(tokenString)); err != nil {
+		panic(err)
+	}
 }
 
 func AttestationPolicyHandler(w http.ResponseWriter, r *http.Request) {
