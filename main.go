@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-jose/go-jose/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 )
@@ -39,20 +40,26 @@ func main() {
 	log.Println("server's public key:")
 	fmt.Println(string(pemdata))
 
+	server := &server{}
 	r := mux.NewRouter()
-	r.HandleFunc("/kbs/v0/resource/{repository}/{type}/{tag}", GetResourceHandler)
-	r.HandleFunc("/kbs/v0/auth", AuthHandler)
-	r.HandleFunc("/kbs/v0/attest", AttestHandler)
-	r.HandleFunc("/kbs/v0/attestation-policy", AttestationPolicyHandler)
-	r.HandleFunc("/kbs/v0/token-certificate-chain", TokenCertificateCainHandler)
+	r.HandleFunc("/kbs/v0/resource/{repository}/{type}/{tag}", server.GetResourceHandler)
+	r.HandleFunc("/kbs/v0/auth", server.AuthHandler)
+	r.HandleFunc("/kbs/v0/attest", server.AttestHandler)
+	r.HandleFunc("/kbs/v0/attestation-policy", server.AttestationPolicyHandler)
+	r.HandleFunc("/kbs/v0/token-certificate-chain", server.TokenCertificateCainHandler)
 
 	log.Printf("listening on %s\n", *listen)
 	log.Fatal(http.ListenAndServe(*listen, r))
 }
 
-func GetResourceHandler(w http.ResponseWriter, r *http.Request) {
+type server struct {
+	teePubKeys map[string]*jose.JSONWebKey
+}
+
+func (s *server) GetResourceHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("GetResourceHandler called")
-	log.Printf("cookie: %q\n", r.Header.Get("Cookie"))
+	cookie := r.Header.Get("Cookie")
+	log.Printf("cookie: %q\n", cookie)
 
 	vars := mux.Vars(r)
 	repository := vars["repository"]
@@ -60,10 +67,29 @@ func GetResourceHandler(w http.ResponseWriter, r *http.Request) {
 	tag := vars["tag"]
 	log.Printf("repository: %q, type: %q, tag: %q\n", repository, resourceType, tag)
 
-	w.Header().Set("Content-Type", "application/json")
+	teePubKey, ok := s.teePubKeys[cookie]
+	if !ok {
+		panic("no tee key found")
+	}
+
+	recipient := jose.Recipient{Algorithm: jose.RSA_OAEP, Key: teePubKey}
+	encrypter, err := jose.NewEncrypter(jose.A128GCM, recipient, nil)
+	if err != nil {
+		panic(err)
+	}
+	plaintext := []byte("Lorem ipsum dolor sit amet")
+	object, err := encrypter.Encrypt(plaintext)
+	if err != nil {
+		panic(err)
+	}
+	serialized := object.FullSerialize()
+
+	if _, err := w.Write([]byte(serialized)); err != nil {
+		panic(err)
+	}
 }
 
-func AuthHandler(w http.ResponseWriter, r *http.Request) {
+func (s *server) AuthHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("AuthHandler called")
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -81,14 +107,29 @@ func AuthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func AttestHandler(w http.ResponseWriter, r *http.Request) {
+func (s *server) AttestHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("AttestHandler called")
-	log.Printf("cookie: %q\n", r.Header.Get("Cookie"))
+	cookie := r.Header.Get("Cookie")
+	log.Printf("cookie: %q\n", cookie)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		panic(err)
 	}
 	log.Printf("body: %s\n", string(body))
+
+	var req Attestation
+	if err := json.Unmarshal(body, &req); err != nil {
+		panic(err)
+	}
+
+	teeKey := jose.JSONWebKey{}
+	if err := teeKey.UnmarshalJSON([]byte(req.TEEPubKey)); err != nil {
+		panic(err)
+	}
+	if !teeKey.Valid() {
+		panic("invalid tee key")
+	}
+	s.teePubKeys[cookie] = &teeKey
 
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodRS256,
@@ -114,7 +155,7 @@ func AttestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func AttestationPolicyHandler(w http.ResponseWriter, r *http.Request) {
+func (s *server) AttestationPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("PolicyHandler called")
 	log.Printf("cookie: %q\n", r.Header.Get("Cookie"))
 	body, err := io.ReadAll(r.Body)
@@ -126,7 +167,7 @@ func AttestationPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 }
 
-func TokenCertificateCainHandler(w http.ResponseWriter, r *http.Request) {
+func (s *server) TokenCertificateCainHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("TokenCertificateCainHandler called")
 	log.Printf("cookie: %q\n", r.Header.Get("Cookie"))
 
