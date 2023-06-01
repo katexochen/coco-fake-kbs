@@ -122,14 +122,10 @@ func (s *server) AttestHandler(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	teeKey := jose.JSONWebKey{}
-	if err := teeKey.UnmarshalJSON([]byte(req.TEEPubKey)); err != nil {
-		panic(err)
+	if !req.TEEPubKey.Valid() {
+		panic("invalid tee pubkey")
 	}
-	if !teeKey.Valid() {
-		panic("invalid tee key")
-	}
-	s.teePubKeys[cookie] = &teeKey
+	s.teePubKeys[cookie] = &req.TEEPubKey
 
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodRS256,
