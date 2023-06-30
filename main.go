@@ -18,19 +18,24 @@ import (
 	"github.com/gorilla/mux"
 )
 
-var privateKey *rsa.PrivateKey
-
 func main() {
 	listen := flag.String("listen", ":8080", "listen address")
 	flag.Parse()
 
-	var err error
-	privateKey, err = rsa.GenerateKey(rand.Reader, 2048)
+	server := NewServer()
+	log.Fatal(server.Serve(*listen))
+}
+
+type server struct {
+	teePubKeys map[string]*jose.JSONWebKey
+	privKey    *rsa.PrivateKey
+}
+
+func NewServer() *server {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		panic(err)
 	}
-
-	// print the public key
 	pemdata := pem.EncodeToMemory(
 		&pem.Block{
 			Type:  "RSA PUBLIC KEY",
@@ -40,20 +45,22 @@ func main() {
 	log.Println("server's public key:")
 	fmt.Println(string(pemdata))
 
-	server := &server{}
-	r := mux.NewRouter()
-	r.HandleFunc("/kbs/v0/resource/{repository}/{type}/{tag}", server.GetResourceHandler)
-	r.HandleFunc("/kbs/v0/auth", server.AuthHandler)
-	r.HandleFunc("/kbs/v0/attest", server.AttestHandler)
-	r.HandleFunc("/kbs/v0/attestation-policy", server.AttestationPolicyHandler)
-	r.HandleFunc("/kbs/v0/token-certificate-chain", server.TokenCertificateCainHandler)
-
-	log.Printf("listening on %s\n", *listen)
-	log.Fatal(http.ListenAndServe(*listen, r))
+	return &server{
+		teePubKeys: make(map[string]*jose.JSONWebKey),
+		privKey:    privateKey,
+	}
 }
 
-type server struct {
-	teePubKeys map[string]*jose.JSONWebKey
+func (s *server) Serve(listen string) error {
+	r := mux.NewRouter()
+	r.HandleFunc("/kbs/v0/resource/{repository}/{type}/{tag}", s.GetResourceHandler)
+	r.HandleFunc("/kbs/v0/auth", s.AuthHandler)
+	r.HandleFunc("/kbs/v0/attest", s.AttestHandler)
+	r.HandleFunc("/kbs/v0/attestation-policy", s.AttestationPolicyHandler)
+	r.HandleFunc("/kbs/v0/token-certificate-chain", s.TokenCertificateCainHandler)
+
+	log.Printf("listening on %s\n", listen)
+	return http.ListenAndServe(listen, r)
 }
 
 func (s *server) GetResourceHandler(w http.ResponseWriter, r *http.Request) {
@@ -138,7 +145,7 @@ func (s *server) AttestHandler(w http.ResponseWriter, r *http.Request) {
 	)
 
 	// Sign and get the complete encoded token as a string using the secret
-	tokenString, err := token.SignedString(privateKey)
+	tokenString, err := token.SignedString(s.privKey)
 	if err != nil {
 		panic(err)
 	}
